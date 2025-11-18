@@ -3,6 +3,7 @@ package controllers
 import (
 	"net/http"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"dinsos_kuburaya/config"
@@ -45,10 +46,10 @@ func CreateDocument(c *gin.Context) {
 	switch ext {
 	case ".jpg", ".jpeg", ".png", ".gif", ".webp":
 		resourceType = "image"
-	case ".pdf":
+	case ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx":
 		resourceType = "raw"
 	default:
-		c.JSON(http.StatusBadRequest, gin.H{"error": "format file tidak didukung. Hanya PDF atau gambar"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "format file tidak didukung."})
 		return
 	}
 
@@ -74,16 +75,100 @@ func CreateDocument(c *gin.Context) {
 		return
 	}
 
+	config.DB.Preload("User").Find(&document)
+
 	c.JSON(http.StatusCreated, gin.H{"document": document})
 }
 
 // ======================================================
-// GET ALL
+// GET ALL WITH SEARCH (FIXED - PostgreSQL Compatible)
 // ======================================================
 func GetDocuments(c *gin.Context) {
 	var documents []models.Document
-	config.DB.Preload("User").Find(&documents)
-	c.JSON(http.StatusOK, gin.H{"documents": documents})
+
+	// Pagination & Filters
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	perPage, _ := strconv.Atoi(c.DefaultQuery("per_page", "10"))
+	letterType := c.Query("letter_type")
+	search := c.Query("search")
+
+	// 1. Base query dengan JOIN ke tabel users
+	// FIXED: Gunakan syntax yang kompatibel dengan MySQL & PostgreSQL
+	query := config.DB.Model(&models.Document{}).
+		Joins("LEFT JOIN users AS User ON documents.user_id = User.id")
+
+	// 2. ✅ FILTER SEARCH (FIXED)
+	if search != "" {
+		searchPattern := "%" + strings.ToLower(search) + "%"
+		query = query.Where(
+			"LOWER(documents.sender) LIKE ? OR LOWER(documents.subject) LIKE ? OR LOWER(documents.file_name) LIKE ? OR LOWER(User.name) LIKE ?",
+			searchPattern, searchPattern, searchPattern, searchPattern,
+		)
+	}
+
+	// 3. Filter Tipe Surat
+	if letterType != "" && letterType != "all" {
+		query = query.Where("documents.letter_type = ?", letterType)
+	}
+
+	// 4. Hitung total (sebelum pagination)
+	var total int64
+	// FIXED: Count harus dilakukan pada subquery untuk akurasi
+	countQuery := config.DB.Model(&models.Document{}).
+		Joins("LEFT JOIN users AS User ON documents.user_id = User.id")
+
+	if search != "" {
+		searchPattern := "%" + strings.ToLower(search) + "%"
+		countQuery = countQuery.Where(
+			"LOWER(documents.sender) LIKE ? OR LOWER(documents.subject) LIKE ? OR LOWER(documents.file_name) LIKE ? OR LOWER(User.name) LIKE ?",
+			searchPattern, searchPattern, searchPattern, searchPattern,
+		)
+	}
+
+	if letterType != "" && letterType != "all" {
+		countQuery = countQuery.Where("documents.letter_type = ?", letterType)
+	}
+
+	if err := countQuery.Count(&total).Error; err != nil {
+		total = 0
+	}
+
+	// 5. Ambil hasil dengan pagination DAN sorting
+	offset := (page - 1) * perPage
+
+	// FIXED: Select distinct untuk menghindari duplikasi dari JOIN
+	err := query.
+		Select("documents.*").
+		Offset(offset).
+		Limit(perPage).
+		Order("documents.created_at DESC").
+		Preload("User").
+		Find(&documents).Error
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal mengambil dokumen"})
+		return
+	}
+
+	// Perhitungan Last Page
+	lastPage := 0
+	if perPage > 0 {
+		lastPage = int(total) / perPage
+		if int(total)%perPage != 0 {
+			lastPage++
+		}
+	}
+	if lastPage == 0 && total > 0 {
+		lastPage = 1
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"documents":    documents,
+		"total":        total,
+		"current_page": page,
+		"last_page":    lastPage,
+		"per_page":     perPage,
+	})
 }
 
 // ======================================================
@@ -108,28 +193,26 @@ func UpdateDocument(c *gin.Context) {
 	id := c.Param("id")
 	var document models.Document
 
-	// Cari dokumen berdasarkan ID
 	if err := config.DB.First(&document, "id = ?", id).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Dokumen tidak ditemukan"})
 		return
 	}
 
-	// Update field lain selain file
 	sender := c.PostForm("sender")
 	subject := c.PostForm("subject")
 	letterType := c.PostForm("letter_type")
 
+	updates := map[string]interface{}{}
 	if sender != "" {
-		document.Sender = sender
+		updates["sender"] = sender
 	}
 	if subject != "" {
-		document.Subject = subject
+		updates["subject"] = subject
 	}
 	if letterType != "" {
-		document.LetterType = letterType
+		updates["letter_type"] = letterType
 	}
 
-	// Cek apakah ada file baru
 	fileHeader, err := c.FormFile("file")
 	if err == nil {
 		src, err := fileHeader.Open()
@@ -145,35 +228,36 @@ func UpdateDocument(c *gin.Context) {
 		switch ext {
 		case ".jpg", ".jpeg", ".png", ".gif", ".webp":
 			resourceType = "image"
-		case ".pdf":
+		case ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx":
 			resourceType = "raw"
 		default:
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Format file tidak didukung. Hanya PDF atau gambar"})
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Format file tidak didukung."})
 			return
 		}
 
-		// Upload file baru
 		url, publicID, err := config.UploadToCloudinary(src, resourceType)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Upload gagal: " + err.Error()})
 			return
 		}
 
-		// Hapus file lama hanya jika ada publicID lama
 		if document.PublicID != "" {
 			config.DeleteFromCloudinary(document.PublicID, document.ResourceType)
 		}
 
-		document.FileName = url
-		document.PublicID = publicID
-		document.ResourceType = resourceType
+		updates["file_name"] = url
+		updates["public_id"] = publicID
+		updates["resource_type"] = resourceType
 	}
 
-	// Simpan perubahan
-	if err := config.DB.Save(&document).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal menyimpan perubahan: " + err.Error()})
-		return
+	if len(updates) > 0 {
+		if err := config.DB.Model(&document).Updates(updates).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal menyimpan perubahan: " + err.Error()})
+			return
+		}
 	}
+
+	config.DB.Preload("User").Find(&document)
 
 	c.JSON(http.StatusOK, gin.H{"message": "Dokumen berhasil diperbarui", "document": document})
 }
@@ -190,10 +274,29 @@ func DeleteDocument(c *gin.Context) {
 		return
 	}
 
-	// Gunakan PublicID + ResourceType dari database
 	config.DeleteFromCloudinary(document.PublicID, document.ResourceType)
-
 	config.DB.Delete(&document)
 
 	c.JSON(http.StatusOK, gin.H{"message": "Dokumen berhasil dihapus"})
+}
+
+// ======================================================
+// DOWNLOAD DOCUMENT (Redirect ke Cloudinary)
+// ======================================================
+func DownloadDocument(c *gin.Context) {
+	id := c.Param("id")
+	var document models.Document
+
+	if err := config.DB.First(&document, "id = ?", id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Dokumen tidak ditemukan"})
+		return
+	}
+
+	// Redirect ke URL Cloudinary
+	if document.FileName == "" {
+		c.JSON(http.StatusNotFound, gin.H{"error": "File tidak tersedia"})
+		return
+	}
+
+	c.Redirect(http.StatusTemporaryRedirect, document.FileName)
 }

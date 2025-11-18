@@ -11,12 +11,13 @@ func DocumentRoutes(r *gin.RouterGroup) {
 	documents := r.Group("/documents")
 	documents.Use(middleware.AuthMiddleware())
 	{
-		// Semua user (Staff + Admin) bisa lihat dan download
+		// SEMUA USER (Staff + Admin) - Read & Download
 		documents.GET("", controllers.GetDocuments)
 		documents.GET("/", controllers.GetDocuments)
 		documents.GET("/:id", controllers.GetDocumentByID)
+		documents.GET("/download/:id", controllers.DownloadDocument)
 
-		// Admin Route
+		// HANYA ADMIN - Create, Update, Delete
 		documents.POST("", middleware.AdminOnly(), controllers.CreateDocument)
 		documents.POST("/", middleware.AdminOnly(), controllers.CreateDocument)
 		documents.PUT("/:id", middleware.AdminOnly(), controllers.UpdateDocument)

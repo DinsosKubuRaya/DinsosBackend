@@ -11,15 +11,17 @@ func DocumentStaffRoutes(r *gin.RouterGroup) {
 	docStaff := r.Group("/document_staff")
 	docStaff.Use(middleware.AuthMiddleware())
 	{
-		// Handle tanpa trailing slash
-		docStaff.POST("", controllers.CreateDocumentStaff)
+		// STAFF & ADMIN - Read
 		docStaff.GET("", controllers.GetDocumentStaffs)
-
-		// Handle dengan trailing slash (fallback)
-		docStaff.POST("/", controllers.CreateDocumentStaff)
 		docStaff.GET("/", controllers.GetDocumentStaffs)
-
 		docStaff.GET("/:id", controllers.GetDocumentStaffByID)
+		docStaff.GET("/download/:id", controllers.DownloadDocumentStaff)
+
+		// STAFF - Create
+		docStaff.POST("", controllers.CreateDocumentStaff)
+		docStaff.POST("/", controllers.CreateDocumentStaff)
+
+		// STAFF - Update & Delete
 		docStaff.PUT("/:id", controllers.UpdateDocumentStaff)
 		docStaff.DELETE("/:id", controllers.DeleteDocumentStaff)
 	}
