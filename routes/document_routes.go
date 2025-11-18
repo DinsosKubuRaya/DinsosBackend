@@ -8,21 +8,18 @@ import (
 )
 
 func DocumentRoutes(r *gin.RouterGroup) {
-	api := r.Group("/documents")
-
-	// WAJIB login + wajib admin
-	api.Use(middleware.AuthMiddleware(), middleware.AdminOnly())
-
+	documents := r.Group("/documents")
+	documents.Use(middleware.AuthMiddleware())
 	{
-		// Handle tanpa trailing slash
-		api.POST("", controllers.CreateDocument)
-		api.GET("", controllers.GetDocuments)
-		api.GET("/:id", controllers.GetDocumentByID)
-		api.PUT("/:id", controllers.UpdateDocument)
-		api.DELETE("/:id", controllers.DeleteDocument)
+		// Semua user (Staff + Admin) bisa lihat dan download
+		documents.GET("", controllers.GetDocuments)
+		documents.GET("/", controllers.GetDocuments)
+		documents.GET("/:id", controllers.GetDocumentByID)
 
-		// Handle dengan trailing slash (fallback)
-		api.POST("/", controllers.CreateDocument)
-		api.GET("/", controllers.GetDocuments)
+		// Admin Route
+		documents.POST("", middleware.AdminOnly(), controllers.CreateDocument)
+		documents.POST("/", middleware.AdminOnly(), controllers.CreateDocument)
+		documents.PUT("/:id", middleware.AdminOnly(), controllers.UpdateDocument)
+		documents.DELETE("/:id", middleware.AdminOnly(), controllers.DeleteDocument)
 	}
 }
