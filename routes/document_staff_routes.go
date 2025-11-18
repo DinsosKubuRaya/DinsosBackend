@@ -15,7 +15,8 @@ func DocumentStaffRoutes(r *gin.RouterGroup) {
 		docStaff.GET("", controllers.GetDocumentStaffs)
 		docStaff.GET("/", controllers.GetDocumentStaffs)
 		docStaff.GET("/:id", controllers.GetDocumentStaffByID)
-		docStaff.GET("/download/:id", controllers.DownloadDocumentStaff)
+
+		docStaff.GET("/:id/download", controllers.DownloadDocumentStaff)
 
 		// STAFF - Create
 		docStaff.POST("", controllers.CreateDocumentStaff)

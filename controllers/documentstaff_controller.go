@@ -1,6 +1,8 @@
 package controllers
 
 import (
+	"bytes"
+	"io"
 	"net/http"
 	"path/filepath"
 	"strconv"
@@ -13,7 +15,7 @@ import (
 )
 
 // ======================================================
-// CREATE (Semua staff bisa upload)
+// CREATE STAFF DOCUMENT
 // ======================================================
 func CreateDocumentStaff(c *gin.Context) {
 	userRaw, exists := c.Get("user")
@@ -43,6 +45,7 @@ func CreateDocumentStaff(c *gin.Context) {
 		return
 	}
 
+	// 1. BUKA FILE
 	src, err := fileHeader.Open()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Tidak dapat membuka file"})
@@ -50,36 +53,51 @@ func CreateDocumentStaff(c *gin.Context) {
 	}
 	defer src.Close()
 
+	// 2. BACA KE BUFFER (Fix File Corrupt)
+	fileBytes, err := io.ReadAll(src)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal membaca file buffer"})
+		return
+	}
+	reader := bytes.NewReader(fileBytes)
+
 	ext := strings.ToLower(filepath.Ext(fileHeader.Filename))
 	var resourceType string
+	var folder string // <-- 1. Variable folder ditambahkan
+
 	switch ext {
 	case ".jpg", ".jpeg", ".png", ".gif", ".webp":
 		resourceType = "image"
+		folder = "gambar" // <-- Set folder gambar
 	case ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx":
 		resourceType = "raw"
+		folder = "arsip" // <-- Set folder arsip
 	default:
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Format file tidak didukung"})
 		return
 	}
 
-	url, publicID, err := config.UploadToCloudinary(src, resourceType)
+	// 3. UPLOAD KE CLOUDINARY (Kirim 4 Parameter: Reader, Filename, Folder, Type)
+	uploadResult, err := config.UploadToCloudinary(reader, fileHeader.Filename, folder, resourceType)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Upload gagal: " + err.Error()})
 		return
 	}
 
+	// 4. SIMPAN DB
 	document := models.DocumentStaff{
-		UserID:       user.ID,
-		Sender:       sender,
-		Subject:      subject,
-		LetterType:   letterType,
-		FileName:     url,
-		PublicID:     publicID,
+		UserID:     user.ID,
+		Sender:     sender,
+		Subject:    subject,
+		LetterType: letterType,
+		// Simpan URL ke FileName
+		FileName:     uploadResult.SecureURL,
+		PublicID:     uploadResult.PublicID,
 		ResourceType: resourceType,
 	}
 
 	if err := config.DB.Create(&document).Error; err != nil {
-		config.DeleteFromCloudinary(publicID, resourceType)
+		config.DeleteFromCloudinary(uploadResult.PublicID, resourceType)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "DB error: " + err.Error()})
 		return
 	}
@@ -93,7 +111,7 @@ func CreateDocumentStaff(c *gin.Context) {
 }
 
 // ======================================================
-// GET ALL (Semua staff bisa lihat semua dokumen staff)
+// GET ALL STAFF DOCUMENTS
 // ======================================================
 func GetDocumentStaffs(c *gin.Context) {
 	var documents []models.DocumentStaff
@@ -188,7 +206,7 @@ func GetDocumentStaffByID(c *gin.Context) {
 }
 
 // ======================================================
-// UPDATE (SEMUA STAFF & ADMIN BISA UPDATE)
+// UPDATE STAFF DOCUMENT
 // ======================================================
 func UpdateDocumentStaff(c *gin.Context) {
 	id := c.Param("id")
@@ -198,8 +216,6 @@ func UpdateDocumentStaff(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Dokumen tidak ditemukan"})
 		return
 	}
-
-	// ✅ TIDAK ADA CHECK OWNERSHIP - Semua staff bisa edit
 
 	sender := c.PostForm("sender")
 	subject := c.PostForm("subject")
@@ -221,6 +237,57 @@ func UpdateDocumentStaff(c *gin.Context) {
 		updates["letter_type"] = letterType
 	}
 
+	// HANDLE UPLOAD JIKA ADA FILE BARU
+	fileHeader, err := c.FormFile("file")
+	if err == nil {
+		src, err := fileHeader.Open()
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Tidak dapat membuka file"})
+			return
+		}
+		defer src.Close()
+
+		// Buffer
+		fileBytes, err := io.ReadAll(src)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal membaca file buffer"})
+			return
+		}
+		reader := bytes.NewReader(fileBytes)
+
+		ext := strings.ToLower(filepath.Ext(fileHeader.Filename))
+		var resourceType string
+		var folder string // <-- 1. Variable folder ditambahkan
+
+		switch ext {
+		case ".jpg", ".jpeg", ".png", ".gif", ".webp":
+			resourceType = "image"
+			folder = "gambar" // <-- Set folder gambar
+		case ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx":
+			resourceType = "raw"
+			folder = "arsip" // <-- Set folder arsip
+		default:
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Format file tidak didukung"})
+			return
+		}
+
+		// 3. UPLOAD KE CLOUDINARY (Dengan Folder)
+		uploadResult, err := config.UploadToCloudinary(reader, fileHeader.Filename, folder, resourceType)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Upload gagal: " + err.Error()})
+			return
+		}
+
+		// Hapus file lama
+		if document.PublicID != "" {
+			config.DeleteFromCloudinary(document.PublicID, document.ResourceType)
+		}
+
+		updates["file_name"] = uploadResult.SecureURL
+		updates["public_id"] = uploadResult.PublicID
+		updates["resource_type"] = resourceType
+	}
+
 	if len(updates) > 0 {
 		if err := config.DB.Model(&document).Updates(updates).Error; err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal menyimpan perubahan"})
@@ -237,7 +304,7 @@ func UpdateDocumentStaff(c *gin.Context) {
 }
 
 // ======================================================
-// DELETE (SEMUA STAFF & ADMIN BISA HAPUS)
+// DELETE
 // ======================================================
 func DeleteDocumentStaff(c *gin.Context) {
 	id := c.Param("id")
@@ -255,7 +322,7 @@ func DeleteDocumentStaff(c *gin.Context) {
 }
 
 // ======================================================
-// DOWNLOAD DOCUMENT STAFF (Redirect ke Cloudinary)
+// DOWNLOAD (Redirect)
 // ======================================================
 func DownloadDocumentStaff(c *gin.Context) {
 	id := c.Param("id")
@@ -266,7 +333,6 @@ func DownloadDocumentStaff(c *gin.Context) {
 		return
 	}
 
-	// Redirect ke URL Cloudinary
 	if document.FileName == "" {
 		c.JSON(http.StatusNotFound, gin.H{"error": "File tidak tersedia"})
 		return

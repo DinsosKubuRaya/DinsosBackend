@@ -15,7 +15,9 @@ func DocumentRoutes(r *gin.RouterGroup) {
 		documents.GET("", controllers.GetDocuments)
 		documents.GET("/", controllers.GetDocuments)
 		documents.GET("/:id", controllers.GetDocumentByID)
-		documents.GET("/download/:id", controllers.DownloadDocument)
+
+		// Download
+		documents.GET("/:id/download", controllers.DownloadDocument)
 
 		// HANYA ADMIN - Create, Update, Delete
 		documents.POST("", middleware.AdminOnly(), controllers.CreateDocument)

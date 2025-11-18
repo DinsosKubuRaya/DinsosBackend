@@ -1,116 +1,202 @@
 package config
 
 import (
-	"context"
+	"bytes"
+	"crypto/sha1"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
+	"io"
+	"mime/multipart"
+	"net/http"
 	"os"
-
-	"github.com/cloudinary/cloudinary-go/v2"
-	"github.com/cloudinary/cloudinary-go/v2/api/uploader"
+	"strconv"
+	"time"
 )
 
-var CLD *cloudinary.Cloudinary
+type CloudinaryResponse struct {
+	PublicID     string `json:"public_id"`
+	SecureURL    string `json:"secure_url"`
+	ResourceType string `json:"resource_type"`
+	Format       string `json:"format"`
+}
 
-func InitCloudinary() error {
-	if CLD != nil {
-		return nil
+type CloudinaryErrorResponse struct {
+	Error struct {
+		Message string `json:"message"`
+	} `json:"error"`
+}
+
+// UploadToCloudinary — upload file ke Cloudinary menggunakan Signed Upload
+// --- PERUBAHAN DI SINI: Mengubah return type dari (string, error) ---
+func UploadToCloudinary(file io.Reader, fileName, folder, resourceType string) (CloudinaryResponse, error) {
+	cloudName := os.Getenv("CLOUDINARY_CLOUD_NAME")
+	apiKey := os.Getenv("CLOUDINARY_API_KEY")
+	apiSecret := os.Getenv("CLOUDINARY_API_SECRET")
+
+	// --- PERUBAHAN DI SINI: Mengubah return error ---
+	if cloudName == "" || apiKey == "" || apiSecret == "" {
+		return CloudinaryResponse{}, fmt.Errorf("Cloudinary credentials tidak lengkap. Pastikan CLOUDINARY_CLOUD_NAME, API_KEY, API_SECRET dan CLOUDINARY_URL sudah terisi")
 	}
 
+	fmt.Printf("☁️ Cloudinary Config loaded: cloud=%s\n", cloudName)
+
+	// Endpoint upload Cloudinary
+	url := fmt.Sprintf("https://api.cloudinary.com/v1_1/%s/%s/upload", cloudName, resourceType)
+
+	// Timestamp
+	timestamp := strconv.FormatInt(time.Now().Unix(), 10)
+
+	// Signature
+	var signatureString string
+	if folder != "" {
+		signatureString = fmt.Sprintf("folder=%s&timestamp=%s%s", folder, timestamp, apiSecret)
+	} else {
+		signatureString = fmt.Sprintf("timestamp=%s%s", timestamp, apiSecret)
+	}
+
+	h := sha1.New()
+	h.Write([]byte(signatureString))
+	signature := hex.EncodeToString(h.Sum(nil))
+
+	// Multipart form
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+
+	part, err := writer.CreateFormFile("file", fileName)
+	if err != nil {
+		return CloudinaryResponse{}, fmt.Errorf("failed to create form file: %v", err) // Perubahan
+	}
+	if _, err := io.Copy(part, file); err != nil {
+		return CloudinaryResponse{}, fmt.Errorf("failed to copy file: %v", err) // Perubahan
+	}
+
+	writer.WriteField("api_key", apiKey)
+	writer.WriteField("timestamp", timestamp)
+	writer.WriteField("signature", signature)
+
+	if folder != "" {
+		writer.WriteField("folder", folder)
+	}
+
+	writer.Close()
+
+	// Request
+	req, err := http.NewRequest("POST", url, &body)
+	if err != nil {
+		return CloudinaryResponse{}, fmt.Errorf("failed to create request: %v", err) // Perubahan
+	}
+	req.Header.Add("Content-Type", writer.FormDataContentType())
+
+	client := &http.Client{Timeout: 30 * time.Second}
+
+	fmt.Println("📤 Sending file to Cloudinary...")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return CloudinaryResponse{}, fmt.Errorf("request to Cloudinary failed: %v", err) // Perubahan
+	}
+	defer resp.Body.Close()
+
+	respBody, _ := io.ReadAll(resp.Body)
+
+	fmt.Printf("📥 Cloudinary Status: %d\n", resp.StatusCode)
+	fmt.Printf("📥 Cloudinary Body: %s\n", string(respBody))
+
+	if resp.StatusCode != 200 {
+		var errResp CloudinaryErrorResponse
+		if json.Unmarshal(respBody, &errResp) == nil {
+			return CloudinaryResponse{}, fmt.Errorf("cloudinary error: %s", errResp.Error.Message) // Perubahan
+		}
+		return CloudinaryResponse{}, fmt.Errorf("upload failed: %s", string(respBody)) // Perubahan
+	}
+
+	var result CloudinaryResponse
+	if err := json.Unmarshal(respBody, &result); err != nil {
+		return CloudinaryResponse{}, fmt.Errorf("invalid response format: %v", err) // Perubahan
+	}
+
+	fmt.Printf("✅ Upload success: %s\n", result.SecureURL)
+	// --- PERUBAHAN DI SINI: Mengembalikan struct lengkap ---
+	return result, nil
+}
+
+// --- FUNGSI BARU DITAMBAHKAN DI SINI ---
+
+type CloudinaryDeleteResponse struct {
+	Result string `json:"result"`
+}
+
+// DeleteFromCloudinary - menghapus file dari Cloudinary menggunakan Public ID
+func DeleteFromCloudinary(publicID string, resourceType string) error {
 	cloudName := os.Getenv("CLOUDINARY_CLOUD_NAME")
 	apiKey := os.Getenv("CLOUDINARY_API_KEY")
 	apiSecret := os.Getenv("CLOUDINARY_API_SECRET")
 
 	if cloudName == "" || apiKey == "" || apiSecret == "" {
-		return fmt.Errorf("cloudinary env tidak lengkap")
+		return fmt.Errorf("Cloudinary credentials tidak lengkap")
 	}
 
-	var err error
-	CLD, err = cloudinary.NewFromParams(cloudName, apiKey, apiSecret)
-	return err
-}
+	// Endpoint destroy Cloudinary
+	url := fmt.Sprintf("https://api.cloudinary.com/v1_1/%s/%s/destroy", cloudName, resourceType)
 
-// Upload file ke folder arsip
-// Upload file ke Cloudinary
-func UploadToCloudinary(file interface{}, resourceType string) (string, string, error) {
-	if err := InitCloudinary(); err != nil {
-		return "", "", err
-	}
+	// Timestamp
+	timestamp := strconv.FormatInt(time.Now().Unix(), 10)
 
-	// Tentukan folder berdasarkan tipe file
-	var folder string
-	switch resourceType {
-	case "image":
-		folder = "gambar" // semua gambar masuk folder "gambar"
-	case "raw":
-		folder = "arsip" // semua PDF masuk folder "arsip"
-	default:
-		folder = "arsip" // default fallback ke "arsip"
-	}
+	// Signature
+	signatureString := fmt.Sprintf("public_id=%s&timestamp=%s%s", publicID, timestamp, apiSecret)
+	h := sha1.New()
+	h.Write([]byte(signatureString))
+	signature := hex.EncodeToString(h.Sum(nil))
 
-	params := uploader.UploadParams{
-		Folder:       folder,
-		ResourceType: resourceType, // "image" atau "raw"
-		Type:         "upload",
-	}
+	// Form data
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	writer.WriteField("public_id", publicID)
+	writer.WriteField("api_key", apiKey)
+	writer.WriteField("timestamp", timestamp)
+	writer.WriteField("signature", signature)
+	writer.Close()
 
-	result, err := CLD.Upload.Upload(context.Background(), file, params)
+	// Request
+	req, err := http.NewRequest("POST", url, &body)
 	if err != nil {
-		return "", "", err
+		return fmt.Errorf("failed to create destroy request: %v", err)
 	}
+	req.Header.Add("Content-Type", writer.FormDataContentType())
 
-	fmt.Printf("Upload berhasil! File tersedia di: %s\n", result.SecureURL)
-	fmt.Printf("ResourceType: %s, PublicID: %s\n", result.ResourceType, result.PublicID)
+	client := &http.Client{Timeout: 30 * time.Second}
 
-	return result.SecureURL, result.PublicID, nil
-}
+	fmt.Printf("🗑️ Deleting from Cloudinary: %s (Type: %s)\n", publicID, resourceType)
 
-// Delete file dari Cloudinary dengan fallback ke image jika raw tidak ditemukan
-func DeleteFromCloudinary(publicID, resourceType string) error {
-	if err := InitCloudinary(); err != nil {
-		return err
-	}
-
-	invalidate := true
-	params := uploader.DestroyParams{
-		PublicID:     publicID,
-		ResourceType: resourceType,
-		Type:         "upload",
-		Invalidate:   &invalidate,
-	}
-
-	res, err := CLD.Upload.Destroy(context.Background(), params)
+	resp, err := client.Do(req)
 	if err != nil {
-		return err
+		return fmt.Errorf("request to Cloudinary destroy failed: %v", err)
 	}
+	defer resp.Body.Close()
 
-	// Fallback: jika file raw tidak ditemukan, coba hapus sebagai image
-	if res.Result == "not found" && resourceType == "raw" {
-		fmt.Printf("File dengan publicID '%s' tidak ditemukan sebagai raw, mencoba image...\n", publicID)
-		params.ResourceType = "image"
-		res2, err2 := CLD.Upload.Destroy(context.Background(), params)
-		if err2 != nil {
-			return err2
+	respBody, _ := io.ReadAll(resp.Body)
+	fmt.Printf("🗑️ Cloudinary Delete Status: %d\n", resp.StatusCode)
+	fmt.Printf("🗑️ Cloudinary Delete Body: %s\n", string(respBody))
+
+	if resp.StatusCode != 200 {
+		var errResp CloudinaryErrorResponse
+		if json.Unmarshal(respBody, &errResp) == nil {
+			return fmt.Errorf("cloudinary delete error: %s", errResp.Error.Message)
 		}
-		switch res2.Result {
-		case "ok":
-			fmt.Printf("File berhasil dihapus sebagai image: %s\n", publicID)
-		case "not found":
-			fmt.Printf("File tetap tidak ditemukan: %s\n", publicID)
-		default:
-			fmt.Printf("Hasil tak terduga dari Cloudinary: %s\n", res2.Result)
-		}
-		return nil
+		return fmt.Errorf("delete failed: %s", string(respBody))
 	}
 
-	// Normal handling
-	switch res.Result {
-	case "ok":
-		fmt.Printf("File berhasil dihapus: %s\n", publicID)
-	case "not found":
-		fmt.Printf("File dengan publicID '%s' tidak ditemukan di Cloudinary.\n", publicID)
-	default:
-		fmt.Printf("Hasil tak terduga dari Cloudinary: %s\n", res.Result)
+	var result CloudinaryDeleteResponse
+	if err := json.Unmarshal(respBody, &result); err != nil {
+		return fmt.Errorf("invalid delete response format: %v", err)
 	}
 
-	return nil
+	// "not found" juga dianggap sukses, karena mungkin file sudah terhapus
+	if result.Result == "ok" || result.Result == "not found" {
+		fmt.Printf("✅ Delete success (or file not found): %s\n", publicID)
+		return nil // Sukses
+	}
+
+	return fmt.Errorf("delete failed with result: %s", result.Result)
 }
