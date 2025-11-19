@@ -59,13 +59,16 @@ func CreateDocument(c *gin.Context) {
 
 	ext := strings.ToLower(filepath.Ext(fileHeader.Filename))
 
-	resourceType := "raw"
-	folder := "arsip"
+	var resourceType, folder string
 
-	if ext == ".jpg" || ext == ".jpeg" || ext == ".png" || ext == ".gif" || ext == ".webp" {
+	switch ext {
+	case ".jpg", ".jpeg", ".png", ".gif", ".webp":
 		resourceType = "image"
 		folder = "gambar"
-	} else if ext == ".pdf" {
+	case ".pdf":
+		resourceType = "raw"
+		folder = "arsip"
+	default:
 		resourceType = "raw"
 		folder = "arsip"
 	}
