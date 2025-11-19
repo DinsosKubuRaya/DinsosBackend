@@ -9,6 +9,7 @@ import (
 	"dinsos_kuburaya/middleware"
 	"dinsos_kuburaya/models"
 	"dinsos_kuburaya/routes"
+	"dinsos_kuburaya/utils"
 )
 
 func main() {
@@ -16,6 +17,8 @@ func main() {
 	r.MaxMultipartMemory = 100 << 20
 
 	config.ConnectDatabase()
+	utils.StartActivityLogCleaner()
+	utils.StartNotificationCleaner()
 
 	if err := config.DB.AutoMigrate(
 		&models.User{},
