@@ -10,24 +10,41 @@ import (
 func UserRoutes(router *gin.RouterGroup) {
 	users := router.Group("/users")
 
-	// Rute create admin tidak perlu auth
-	users.POST("/admin", controllers.CreateAdmin)
+	// users.POST("/superadmin/init", controllers.CreateSuperAdmin)
 
-	// Grup untuk rute yang perlu auth
+	// ============
+	// CREATE USERS
+	// ============
+	// Superadmin membuat superadmin, admin, staff
+	users.POST("/superadmin", middleware.AuthMiddleware(), middleware.RoleMiddleware("superadmin"), controllers.CreateSuperAdmin)
+
+	// Admin dan superadmin boleh buat admin
+	users.POST("/admin", middleware.AuthMiddleware(), middleware.RoleMiddleware("superadmin"), controllers.CreateAdmin)
+
+	// Admin dan superadmin boleh buat staff
+	users.POST("/staff", middleware.AuthMiddleware(), middleware.RoleMiddleware("superadmin"), controllers.CreateStaff)
+
+	// ============
+	// PROTECTED ROUTES
+	// ============
 	usersAuth := users.Group("")
 	usersAuth.Use(middleware.AuthMiddleware())
 	{
-		// Handle tanpa trailing slash
-		usersAuth.GET("", controllers.GetUsers)
+		// STAFF: hanya bisa GET /me
 		usersAuth.GET("/me", controllers.GetMe)
-		usersAuth.GET("/:id", controllers.GetUserByID)
-		usersAuth.PUT("/:id", controllers.UpdateUser)
 
-		// Handle dengan trailing slash (fallback)
-		usersAuth.GET("/", controllers.GetUsers)
+		// SUPERADMIN & ADMIN → Get All Users
+		usersAuth.GET("", middleware.RoleMiddleware("admin", "superadmin"), controllers.GetUsers)
 
-		// Admin only routes
-		usersAuth.POST("/staff", middleware.AdminOnly(), controllers.CreateStaff)
-		usersAuth.DELETE("/:id", middleware.AdminOnly(), controllers.DeleteUser)
+		// SUPERADMIN & ADMIN → Get User by ID
+		usersAuth.GET("/:id", middleware.RoleMiddleware("admin", "superadmin"), controllers.GetUserByID)
+
+		// UPDATE:
+		usersAuth.PUT("/:id", middleware.UserSelfOrSuperAdmin(), controllers.UpdateUser)
+
+		// DELETE: hanya superadmin
+		usersAuth.DELETE("/:id", middleware.RoleMiddleware("superadmin"), controllers.DeleteUser)
+
+		usersAuth.GET("/for-filter", middleware.RoleMiddleware("admin", "superadmin"), controllers.GetUsersForFilter)
 	}
 }

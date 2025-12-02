@@ -18,5 +18,7 @@ func NotificationRoutes(router *gin.RouterGroup) {
 		notifications.GET("/", controllers.GetNotifications)
 
 		notifications.POST("/:id/read", controllers.MarkNotificationAsRead)
+
+		notifications.POST("/read-all", controllers.MarkAllAsRead)
 	}
 }

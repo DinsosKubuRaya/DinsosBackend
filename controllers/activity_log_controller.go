@@ -3,34 +3,49 @@ package controllers
 import (
 	"dinsos_kuburaya/config"
 	"dinsos_kuburaya/models"
+	"fmt"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
 )
 
-func CreateActivityLog(userID string, userName, action, message string) {
-	log := models.ActivityLog{
-		UserID:   userID,
-		UserName: userName,
-		Action:   action,
-		Message:  message,
-	}
-	go func() {
-		config.DB.Create(&log)
-	}()
-}
-
 // API: Mengambil semua data log untuk ditampilkan di dashboard
 func GetAllActivityLogs(c *gin.Context) {
 	var logs []models.ActivityLog
 
-	// Urutkan dari yang terbaru (DESC)
-	if err := config.DB.Order("created_at desc").Find(&logs).Error; err != nil {
+	// Ambil query params
+	page := 1
+	limit := 20
+
+	if p := c.Query("page"); p != "" {
+		fmt.Sscanf(p, "%d", &page)
+	}
+	if l := c.Query("limit"); l != "" {
+		fmt.Sscanf(l, "%d", &limit)
+	}
+
+	// Hitung offset
+	offset := (page - 1) * limit
+
+	// Ambil data dengan limit + offset
+	if err := config.DB.
+		Order("created_at DESC").
+		Limit(limit).
+		Offset(offset).
+		Find(&logs).Error; err != nil {
+
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal mengambil log aktivitas"})
 		return
 	}
 
+	// Hitung total untuk pagination (optional)
+	var total int64
+	config.DB.Model(&models.ActivityLog{}).Count(&total)
+
 	c.JSON(http.StatusOK, gin.H{
-		"data": logs,
+		"page":  page,
+		"limit": limit,
+		"total": total,
+		"data":  logs,
 	})
 }

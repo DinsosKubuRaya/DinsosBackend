@@ -8,12 +8,16 @@ import (
 )
 
 type User struct {
-	// Pastikan ini semua HURUF BESAR
-	ID        string    `gorm:"type:char(36);primaryKey" json:"id"`
-	Name      string    `gorm:"type:varchar(100)" json:"name"`
-	Username  string    `gorm:"type:varchar(100);unique" json:"username"`
-	Password  string    `gorm:"type:varchar(255)" json:"password"`
-	Role      string    `gorm:"type:enum('admin','staff')" json:"role"`
+	ID       string `gorm:"type:char(36);primaryKey" json:"id"`
+	Name     string `gorm:"type:varchar(100)" json:"name"`
+	Username string `gorm:"type:varchar(100);unique" json:"username"`
+	Password string `gorm:"type:varchar(255)" json:"password"`
+	Role     string `gorm:"type:enum('admin','staff','superadmin')" json:"role"`
+
+	// TAMBAH FIELD INI
+	PhotoURL *string `gorm:"type:text;default:null" json:"photo_url"`
+	PhotoID  *string `gorm:"type:varchar(255);default:null" json:"photo_id"`
+
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 }

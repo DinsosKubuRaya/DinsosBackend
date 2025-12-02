@@ -5,6 +5,7 @@ import (
 
 	"dinsos_kuburaya/config"
 	"dinsos_kuburaya/models"
+	"dinsos_kuburaya/services"
 
 	"github.com/gin-gonic/gin"
 )
@@ -23,20 +24,51 @@ func CreateSuperiorOrder(c *gin.Context) {
 		return
 	}
 
+	// Ambil dokumennya dulu
+	var doc models.Document
+	if err := config.DB.First(&doc, "id = ?", input.DocumentID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Dokumen tidak ditemukan"})
+		return
+	}
+
 	var created []models.SuperiorOrder
+
+	// Loop setiap user yang ditugaskan
 	for _, userID := range input.UserIDs {
+
 		order := models.SuperiorOrder{
 			DocumentID: input.DocumentID,
 			UserID:     userID,
 		}
+
 		if err := config.DB.Create(&order).Error; err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create record: " + err.Error()})
 			return
 		}
+
 		created = append(created, order)
+
+		// 🔥 Kirim notifikasi khusus user tersebut
+		message := "Dokumen masuk kepada Anda: " + doc.FileName
+		link := "/documents/" + doc.ID
+
+		services.NotifySpecificUser(userID, message, link)
 	}
 
-	c.JSON(http.StatusCreated, gin.H{"message": "SuperiorOrder created", "data": created})
+	if userRaw, exists := c.Get("user"); exists {
+		user := userRaw.(models.User)
+		services.CreateActivity(
+			user.ID,
+			user.Name,
+			"create",
+			"Menambahkan penugasan: "+doc.FileName,
+		)
+	}
+
+	c.JSON(http.StatusCreated, gin.H{
+		"message": "Superior orders created",
+		"data":    created,
+	})
 }
 
 // ======================================================
@@ -51,6 +83,7 @@ func GetSuperiorOrders(c *gin.Context) {
 
 	// Map untuk menampung hasil akhir
 	type UserInfo struct {
+		ID   string `json:"id"`
 		Name string `json:"name"`
 	}
 
@@ -72,7 +105,10 @@ func GetSuperiorOrders(c *gin.Context) {
 				Users:      []UserInfo{},
 			}
 		}
-		grouped[o.DocumentID].Users = append(grouped[o.DocumentID].Users, UserInfo{Name: o.User.Name})
+		grouped[o.DocumentID].Users = append(
+			grouped[o.DocumentID].Users,
+			UserInfo{ID: o.UserID, Name: o.User.Name},
+		)
 	}
 
 	// Ubah map menjadi slice untuk response
@@ -107,7 +143,7 @@ func GetSuperiorOrdersByDocument(c *gin.Context) {
 // UPDATE SuperiorOrder by document_id
 // ======================================================
 func UpdateSuperiorOrder(c *gin.Context) {
-	documentID := c.Param("document_id")
+	documentID := c.Param("id")
 
 	var input struct {
 		UserIDs []string `json:"user_ids" binding:"required"`
@@ -118,39 +154,111 @@ func UpdateSuperiorOrder(c *gin.Context) {
 		return
 	}
 
-	// Hapus semua user yang terkait dengan document_id
+	if documentID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Document ID is required"})
+		return
+	}
+
+	// 🔥 Ambil dokumen untuk nama file
+	var doc models.Document
+	if err := config.DB.First(&doc, "id = ?", documentID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Dokumen tidak ditemukan"})
+		return
+	}
+
+	// 🗑 Hapus semua user lama
 	if err := config.DB.Where("document_id = ?", documentID).Delete(&models.SuperiorOrder{}).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete old records: " + err.Error()})
 		return
 	}
 
-	// Tambahkan user_id baru
+	// ➕ Tambah user baru + kirim notifikasi
 	var created []models.SuperiorOrder
+
 	for _, userID := range input.UserIDs {
+		if userID == "" {
+			continue
+		}
+
 		order := models.SuperiorOrder{
 			DocumentID: documentID,
 			UserID:     userID,
 		}
+
 		if err := config.DB.Create(&order).Error; err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create record: " + err.Error()})
 			return
 		}
+
 		created = append(created, order)
+
+		// 🔔 KIRIM NOTIFIKASI PER USER
+		message := "Dokumen masuk kepada Anda: " + doc.FileName
+		link := "/documents/" + doc.ID
+		services.NotifySpecificUser(userID, message, link)
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "SuperiorOrder updated", "data": created})
+	if userRaw, exists := c.Get("user"); exists {
+		user := userRaw.(models.User)
+		services.CreateActivity(
+			user.ID,
+			user.Name,
+			"update",
+			"Memperbarui penugasan: "+doc.FileName,
+		)
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "SuperiorOrder updated",
+		"data":    created,
+	})
 }
 
 // ======================================================
 // DELETE SuperiorOrder by document_id
 // ======================================================
 func DeleteSuperiorOrder(c *gin.Context) {
-	documentID := c.Param("document_id")
+	documentID := c.Param("id") // Diubah dari "document_id" menjadi "id"
+
+	// Validasi document_id tidak kosong
+	if documentID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Document ID is required"})
+		return
+	}
+
+	// Cek dulu apakah ada data yang akan dihapus
+	var count int64
+	if err := config.DB.Model(&models.SuperiorOrder{}).Where("document_id = ?", documentID).Count(&count).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to check records: " + err.Error()})
+		return
+	}
+
+	if count == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "No records found for this document"})
+		return
+	}
 
 	if err := config.DB.Where("document_id = ?", documentID).Delete(&models.SuperiorOrder{}).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete records: " + err.Error()})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "All SuperiorOrders for document deleted", "document_id": documentID})
+	var doc models.Document
+	config.DB.First(&doc, "id = ?", documentID)
+
+	if userRaw, exists := c.Get("user"); exists {
+		user := userRaw.(models.User)
+		services.CreateActivity(
+			user.ID,
+			user.Name,
+			"delete",
+			"Menghapus penugasan: "+doc.FileName,
+		)
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message":       "All SuperiorOrders for document deleted",
+		"document_id":   documentID,
+		"deleted_count": count,
+	})
 }

@@ -28,15 +28,13 @@ type CloudinaryErrorResponse struct {
 }
 
 // UploadToCloudinary — upload file ke Cloudinary menggunakan Signed Upload
-// --- PERUBAHAN DI SINI: Mengubah return type dari (string, error) ---
 func UploadToCloudinary(file io.Reader, fileName, folder, resourceType string) (CloudinaryResponse, error) {
 	cloudName := os.Getenv("CLOUDINARY_CLOUD_NAME")
 	apiKey := os.Getenv("CLOUDINARY_API_KEY")
 	apiSecret := os.Getenv("CLOUDINARY_API_SECRET")
 
-	// --- PERUBAHAN DI SINI: Mengubah return error ---
 	if cloudName == "" || apiKey == "" || apiSecret == "" {
-		return CloudinaryResponse{}, fmt.Errorf("Cloudinary credentials tidak lengkap. Pastikan CLOUDINARY_CLOUD_NAME, API_KEY, API_SECRET dan CLOUDINARY_URL sudah terisi")
+		return CloudinaryResponse{}, fmt.Errorf("cloudinary credentials tidak lengkap. Pastikan CLOUDINARY_CLOUD_NAME, API_KEY, API_SECRET dan CLOUDINARY_URL sudah terisi")
 	}
 
 	fmt.Printf("☁️ Cloudinary Config loaded: cloud=%s\n", cloudName)
@@ -47,12 +45,13 @@ func UploadToCloudinary(file io.Reader, fileName, folder, resourceType string) (
 	// Timestamp
 	timestamp := strconv.FormatInt(time.Now().Unix(), 10)
 
-	// Signature
+	// 🔥 PERUBAHAN PENTING: Tambahkan parameter untuk mempertahankan nama file asli
+	// Signature string harus mencakup semua parameter yang digunakan
 	var signatureString string
 	if folder != "" {
-		signatureString = fmt.Sprintf("folder=%s&timestamp=%s%s", folder, timestamp, apiSecret)
+		signatureString = fmt.Sprintf("folder=%s&timestamp=%s&unique_filename=false&use_filename=true%s", folder, timestamp, apiSecret)
 	} else {
-		signatureString = fmt.Sprintf("timestamp=%s%s", timestamp, apiSecret)
+		signatureString = fmt.Sprintf("timestamp=%s&unique_filename=false&use_filename=true%s", timestamp, apiSecret)
 	}
 
 	h := sha1.New()
@@ -65,15 +64,19 @@ func UploadToCloudinary(file io.Reader, fileName, folder, resourceType string) (
 
 	part, err := writer.CreateFormFile("file", fileName)
 	if err != nil {
-		return CloudinaryResponse{}, fmt.Errorf("failed to create form file: %v", err) // Perubahan
+		return CloudinaryResponse{}, fmt.Errorf("failed to create form file: %v", err)
 	}
 	if _, err := io.Copy(part, file); err != nil {
-		return CloudinaryResponse{}, fmt.Errorf("failed to copy file: %v", err) // Perubahan
+		return CloudinaryResponse{}, fmt.Errorf("failed to copy file: %v", err)
 	}
 
 	writer.WriteField("api_key", apiKey)
 	writer.WriteField("timestamp", timestamp)
 	writer.WriteField("signature", signature)
+
+	// 🔥 PARAMETER BARU: Gunakan nama file asli dan non-aktifkan unique filename
+	writer.WriteField("use_filename", "true")
+	writer.WriteField("unique_filename", "false")
 
 	if folder != "" {
 		writer.WriteField("folder", folder)
@@ -84,7 +87,7 @@ func UploadToCloudinary(file io.Reader, fileName, folder, resourceType string) (
 	// Request
 	req, err := http.NewRequest("POST", url, &body)
 	if err != nil {
-		return CloudinaryResponse{}, fmt.Errorf("failed to create request: %v", err) // Perubahan
+		return CloudinaryResponse{}, fmt.Errorf("failed to create request: %v", err)
 	}
 	req.Header.Add("Content-Type", writer.FormDataContentType())
 
@@ -94,7 +97,7 @@ func UploadToCloudinary(file io.Reader, fileName, folder, resourceType string) (
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return CloudinaryResponse{}, fmt.Errorf("request to Cloudinary failed: %v", err) // Perubahan
+		return CloudinaryResponse{}, fmt.Errorf("request to Cloudinary failed: %v", err)
 	}
 	defer resp.Body.Close()
 
@@ -106,35 +109,32 @@ func UploadToCloudinary(file io.Reader, fileName, folder, resourceType string) (
 	if resp.StatusCode != 200 {
 		var errResp CloudinaryErrorResponse
 		if json.Unmarshal(respBody, &errResp) == nil {
-			return CloudinaryResponse{}, fmt.Errorf("cloudinary error: %s", errResp.Error.Message) // Perubahan
+			return CloudinaryResponse{}, fmt.Errorf("cloudinary error: %s", errResp.Error.Message)
 		}
-		return CloudinaryResponse{}, fmt.Errorf("upload failed: %s", string(respBody)) // Perubahan
+		return CloudinaryResponse{}, fmt.Errorf("upload failed: %s", string(respBody))
 	}
 
 	var result CloudinaryResponse
 	if err := json.Unmarshal(respBody, &result); err != nil {
-		return CloudinaryResponse{}, fmt.Errorf("invalid response format: %v", err) // Perubahan
+		return CloudinaryResponse{}, fmt.Errorf("invalid response format: %v", err)
 	}
 
 	fmt.Printf("✅ Upload success: %s\n", result.SecureURL)
-	// --- PERUBAHAN DI SINI: Mengembalikan struct lengkap ---
 	return result, nil
 }
 
-// --- FUNGSI BARU DITAMBAHKAN DI SINI ---
-
+// Fungsi DeleteFromCloudinary tetap sama...
 type CloudinaryDeleteResponse struct {
 	Result string `json:"result"`
 }
 
-// DeleteFromCloudinary - menghapus file dari Cloudinary menggunakan Public ID
 func DeleteFromCloudinary(publicID string, resourceType string) error {
 	cloudName := os.Getenv("CLOUDINARY_CLOUD_NAME")
 	apiKey := os.Getenv("CLOUDINARY_API_KEY")
 	apiSecret := os.Getenv("CLOUDINARY_API_SECRET")
 
 	if cloudName == "" || apiKey == "" || apiSecret == "" {
-		return fmt.Errorf("Cloudinary credentials tidak lengkap")
+		return fmt.Errorf("cloudinary credentials tidak lengkap")
 	}
 
 	// Endpoint destroy Cloudinary

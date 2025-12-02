@@ -9,20 +9,24 @@ import (
 
 func DocumentRoutes(r *gin.RouterGroup) {
 	documents := r.Group("/documents")
-	documents.Use(middleware.AuthMiddleware())
+
+	// Harus login + hanya admin dan superadmin yang boleh akses
+	documents.Use(
+		middleware.AuthMiddleware(),
+		middleware.RoleMiddleware("admin", "superadmin"),
+	)
+
 	{
-		// SEMUA USER (Staff + Admin) - Read & Download
+		// ADMIN & SUPERADMIN BOLEH READ
 		documents.GET("", controllers.GetDocuments)
 		documents.GET("/", controllers.GetDocuments)
 		documents.GET("/:id", controllers.GetDocumentByID)
-
-		// Download
 		documents.GET("/:id/download", controllers.DownloadDocument)
 
-		// HANYA ADMIN - Create, Update, Delete
-		documents.POST("", middleware.AdminOnly(), controllers.CreateDocument)
-		documents.POST("/", middleware.AdminOnly(), controllers.CreateDocument)
-		documents.PUT("/:id", middleware.AdminOnly(), controllers.UpdateDocument)
-		documents.DELETE("/:id", middleware.AdminOnly(), controllers.DeleteDocument)
+		// ADMIN & SUPERADMIN BOLEH CREATE, UPDATE, DELETE
+		documents.POST("", controllers.CreateDocument)
+		documents.POST("/", controllers.CreateDocument)
+		documents.PUT("/:id", controllers.UpdateDocument)
+		documents.DELETE("/:id", controllers.DeleteDocument)
 	}
 }

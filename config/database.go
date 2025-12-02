@@ -33,6 +33,9 @@ func ConnectDatabase() {
 		log.Fatal("❌ Gagal koneksi database:", err)
 	}
 
+	// 👉 aktifkan proteksi SQL injection
+	registerQueryProtector(database)
+
 	DB = database
-	log.Println("✅ Database terkoneksi")
+	log.Println("✅ Database terkoneksi (dengan proteksi SQL Injection)")
 }
