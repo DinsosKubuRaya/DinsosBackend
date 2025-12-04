@@ -9,7 +9,10 @@ import (
 
 func ActivityLogRoutes(router *gin.RouterGroup) {
 	logs := router.Group("/activity-logs")
-	logs.Use(middleware.AuthMiddleware())
+	logs.Use(
+		middleware.AuthMiddleware(),
+		middleware.RoleMiddleware("admin", "superadmin"),
+	)
 	{
 		logs.GET("", controllers.GetAllActivityLogs)
 	}

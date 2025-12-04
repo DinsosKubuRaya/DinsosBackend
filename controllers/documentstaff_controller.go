@@ -103,9 +103,10 @@ func CreateDocumentStaff(c *gin.Context) {
 		"Mengunggah dokumen staff: "+document.FileName,
 	)
 
+	// PERUBAHAN DI SINI: Kirim file_url sebagai link notifikasi
 	services.NotifyAdmins(
 		"Dokumen baru dari "+user.Name,
-		"/superadmin/documents/"+document.ID,
+		document.FileURL, // Menggunakan file_url bukan path ID
 	)
 
 	c.JSON(http.StatusCreated, gin.H{
@@ -208,6 +209,33 @@ func GetDocumentStaffByID(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"document": document})
+}
+
+// ======================================================
+// GET PERSONAL DOCUMENTS (User's own documents only)
+// ======================================================
+func GetPersonalDocumentStaffs(c *gin.Context) {
+	userRaw, exists := c.Get("user")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+		return
+	}
+	user := userRaw.(models.User)
+
+	var documents []models.DocumentStaff
+
+	// Hanya ambil dokumen milik user yang login
+	if err := config.DB.Where("user_id = ?", user.ID).
+		Order("created_at DESC").
+		Find(&documents).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal mengambil dokumen pribadi"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"documents": documents,
+		"total":     len(documents),
+	})
 }
 
 // ======================================================

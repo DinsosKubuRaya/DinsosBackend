@@ -18,6 +18,10 @@ var allowedRoles = map[string]bool{
 	"staff":      true,
 }
 
+type StorePushTokenRequest struct {
+	Token string `json:"token"`
+}
+
 func hashPassword(pass string) (string, error) {
 	hashed, err := bcrypt.GenerateFromPassword([]byte(pass), bcrypt.DefaultCost)
 	return string(hashed), err
@@ -361,4 +365,34 @@ func DeleteUser(c *gin.Context) {
 	)
 
 	c.JSON(http.StatusOK, gin.H{"message": "User berhasil dihapus"})
+}
+
+func StorePushToken(c *gin.Context) {
+	userRaw, exists := c.Get("user")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+		return
+	}
+
+	user := userRaw.(models.User)
+
+	var req StorePushTokenRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
+		return
+	}
+
+	if req.Token == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Token is required"})
+		return
+	}
+
+	// Simpan push token
+	config.DB.Model(&models.User{}).
+		Where("id = ?", user.ID).
+		Update("push_token", req.Token)
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Push token stored successfully",
+	})
 }

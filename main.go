@@ -27,7 +27,6 @@ func main() {
 		&models.User{},
 		&models.Document{},
 		&models.SecretToken{},
-		&models.SuperiorOrder{},
 		&models.DocumentStaff{},
 		&models.Notification{},
 		&models.ActivityLog{},
@@ -53,7 +52,6 @@ func main() {
 		routes.UserRoutes(api)
 		routes.DocumentRoutes(api)
 		routes.DocumentStaffRoutes(api)
-		routes.SuperiorOrderRoutes(api)
 		routes.NotificationRoutes(api)
 		routes.ActivityLogRoutes(api)
 	}

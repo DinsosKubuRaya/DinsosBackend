@@ -11,6 +11,7 @@ func UserRoutes(router *gin.RouterGroup) {
 	users := router.Group("/users")
 
 	// users.POST("/superadmin/init", controllers.CreateSuperAdmin)
+	users.POST("/push-token", middleware.AuthMiddleware(), controllers.StorePushToken)
 
 	// ============
 	// CREATE USERS
@@ -18,10 +19,10 @@ func UserRoutes(router *gin.RouterGroup) {
 	// Superadmin membuat superadmin, admin, staff
 	users.POST("/superadmin", middleware.AuthMiddleware(), middleware.RoleMiddleware("superadmin"), controllers.CreateSuperAdmin)
 
-	// Admin dan superadmin boleh buat admin
+	// superadmin boleh buat admin
 	users.POST("/admin", middleware.AuthMiddleware(), middleware.RoleMiddleware("superadmin"), controllers.CreateAdmin)
 
-	// Admin dan superadmin boleh buat staff
+	// superadmin boleh buat staff
 	users.POST("/staff", middleware.AuthMiddleware(), middleware.RoleMiddleware("superadmin"), controllers.CreateStaff)
 
 	// ============

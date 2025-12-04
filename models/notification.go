@@ -12,7 +12,7 @@ type Notification struct {
 	UserID    string    `gorm:"type:char(36);not null" json:"user_id"`
 	Message   string    `gorm:"type:text;not null" json:"message"`
 	IsRead    bool      `gorm:"default:false" json:"is_read"`
-	Link      string    `gorm:"type:varchar(255)" json:"link"`
+	Link      string    `gorm:"type:text" json:"link"`
 	User      User      `gorm:"foreignKey:UserID;references:ID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE;" json:"user,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`

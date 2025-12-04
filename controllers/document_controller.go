@@ -5,7 +5,9 @@ import (
 	"io"
 	"net/http"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"time"
 
 	"dinsos_kuburaya/config"
 	"dinsos_kuburaya/models"
@@ -89,7 +91,12 @@ func CreateDocument(c *gin.Context) {
 
 	// LOG + NOTIF
 	services.CreateActivity(user.ID, user.Name, "create", "Mengunggah dokumen: "+document.FileName)
-	services.NotifyAllUsers("Dokumen baru diunggah: "+document.FileName, "/documents/"+document.ID)
+
+	// PERUBAHAN DI SINI: Kirim file_url sebagai link notifikasi
+	services.NotifyAllUsers(
+		"Dokumen baru diunggah: "+document.FileName,
+		document.FileURL,
+	)
 
 	c.JSON(http.StatusOK, gin.H{
 		"message":  "Dokumen berhasil diupload",
@@ -181,6 +188,108 @@ func UpdateDocument(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"message":  "Dokumen berhasil diperbarui",
 		"document": document,
+	})
+}
+
+// =======================
+// GET DOCUMENT SUMMARY (PER BULAN, PER MINGGU)
+// =======================
+func GetDocumentSummary(c *gin.Context) {
+	// Ambil parameter tahun dan bulan, jika tidak ada, gunakan waktu sekarang
+	yearStr := c.DefaultQuery("year", "")
+	monthStr := c.DefaultQuery("month", "")
+
+	now := time.Now()
+	year := now.Year()
+	month := int(now.Month())
+
+	if yearStr != "" {
+		if y, err := strconv.Atoi(yearStr); err == nil {
+			year = y
+		}
+	}
+	if monthStr != "" {
+		if m, err := strconv.Atoi(monthStr); err == nil {
+			month = m
+		}
+	}
+
+	// Tentukan awal dan akhir bulan
+	startOfMonth := time.Date(year, time.Month(month), 1, 0, 0, 0, 0, time.Local)
+	endOfMonth := startOfMonth.AddDate(0, 1, -1).Add(23*time.Hour + 59*time.Minute + 59*time.Second)
+
+	// Inisialisasi struktur untuk 4 minggu
+	type WeekSummary struct {
+		Week   int    `json:"week"`
+		Start  string `json:"start"`
+		End    string `json:"end"`
+		Masuk  int    `json:"masuk"`
+		Keluar int    `json:"keluar"`
+	}
+	weeks := make([]WeekSummary, 0, 4)
+
+	// Tentukan pembagian minggu
+	lastDay := endOfMonth.Day()
+
+	// Rentang minggu (tiap 7 hari, kecuali minggu terakhir)
+	weekRanges := []struct {
+		start int
+		end   int
+	}{
+		{1, 7},
+		{8, 14},
+		{15, 21},
+		{22, lastDay},
+	}
+
+	for i, weekRange := range weekRanges {
+		// Jika start > lastDay, lewati minggu ini
+		if weekRange.start > lastDay {
+			weeks = append(weeks, WeekSummary{
+				Week:   i + 1,
+				Start:  "",
+				End:    "",
+				Masuk:  0,
+				Keluar: 0,
+			})
+			continue
+		}
+
+		// Pastikan end tidak melebihi lastDay
+		endDay := weekRange.end
+		if endDay > lastDay {
+			endDay = lastDay
+		}
+
+		startDate := time.Date(year, time.Month(month), weekRange.start, 0, 0, 0, 0, time.Local)
+		endDate := time.Date(year, time.Month(month), endDay, 23, 59, 59, 0, time.Local)
+
+		// Format tanggal ke string ISO dengan timezone lokal
+		startStr := startDate.Format("2006-01-02 15:04:05.000")
+		endStr := endDate.Format("2006-01-02 15:04:05.000")
+
+		// Query untuk surat masuk dan keluar dalam rentang ini
+		var masuk, keluar int64
+		config.DB.Model(&models.Document{}).Where("created_at BETWEEN ? AND ? AND letter_type = ?", startDate, endDate, "masuk").Count(&masuk)
+		config.DB.Model(&models.Document{}).Where("created_at BETWEEN ? AND ? AND letter_type = ?", startDate, endDate, "keluar").Count(&keluar)
+
+		weeks = append(weeks, WeekSummary{
+			Week:   i + 1,
+			Start:  startStr,
+			End:    endStr,
+			Masuk:  int(masuk),
+			Keluar: int(keluar),
+		})
+	}
+
+	// Get month name
+	monthName := startOfMonth.Month().String()
+
+	c.JSON(http.StatusOK, gin.H{
+		"year":       year,
+		"month":      month,
+		"month_name": monthName,
+		"weeks":      weeks,
 	})
 }
 

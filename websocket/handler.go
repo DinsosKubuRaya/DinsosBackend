@@ -1,6 +1,7 @@
 package websocket
 
 import (
+	"log"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -28,5 +29,21 @@ func WebSocketHandler(hub *Hub) gin.HandlerFunc {
 		}
 
 		hub.register <- client
+		go func() {
+			defer func() {
+				hub.unregister <- client
+				client.Conn.Close()
+			}()
+
+			for {
+				// Baca message tapi tidak dipakai
+				_, _, err := client.Conn.ReadMessage()
+				if err != nil {
+					log.Println("WS read error / closed:", err)
+					break
+				}
+			}
+		}()
+
 	}
 }
