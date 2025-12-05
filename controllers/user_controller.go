@@ -1,6 +1,7 @@
 package controllers
 
 import (
+	"log"
 	"net/http"
 
 	"dinsos_kuburaya/config"
@@ -367,30 +368,47 @@ func DeleteUser(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "User berhasil dihapus"})
 }
 
+/*
+|--------------------------------------------------------------------------
+| PUSH TOKEN
+|--------------------------------------------------------------------------
+*/
+
 func StorePushToken(c *gin.Context) {
 	userRaw, exists := c.Get("user")
 	if !exists {
+		log.Println("[PushToken] Unauthorized user")
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
 		return
 	}
 
 	user := userRaw.(models.User)
+	log.Println("[PushToken] User:", user.ID)
 
 	var req StorePushTokenRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
+		log.Println("[PushToken] Invalid JSON:", err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
 		return
 	}
 
+	log.Println("[PushToken] Received token:", req.Token)
+
 	if req.Token == "" {
+		log.Println("[PushToken] Empty token received")
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Token is required"})
 		return
 	}
 
-	// Simpan push token
-	config.DB.Model(&models.User{}).
+	// Simpan token
+	if err := config.DB.Model(&models.User{}).
 		Where("id = ?", user.ID).
-		Update("push_token", req.Token)
+		Update("push_token", req.Token).Error; err != nil {
+		log.Println("[PushToken] DB update error:", err)
+		return
+	}
+
+	log.Println("[PushToken] Token saved SUCCESSFULLY for user:", user.ID)
 
 	c.JSON(http.StatusOK, gin.H{
 		"message": "Push token stored successfully",
