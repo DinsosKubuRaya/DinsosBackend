@@ -13,9 +13,10 @@ type Client struct {
 }
 
 type NotificationEvent struct {
-	UserID  string `json:"user_id"`
-	Type    string `json:"type"`
-	Message string `json:"message"`
+	UserID  string      `json:"user_id"`
+	Type    string      `json:"type"`
+	Message string      `json:"message"`
+	Payload interface{} `json:"payload,omitempty"`
 }
 
 type Hub struct {

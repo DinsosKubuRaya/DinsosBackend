@@ -10,8 +10,12 @@ import (
 	"mime/multipart"
 	"net/http"
 	"os"
+	"sort"
 	"strconv"
+	"strings"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 type CloudinaryResponse struct {
@@ -39,26 +43,29 @@ func UploadToCloudinary(file io.Reader, fileName, folder, resourceType string) (
 
 	fmt.Printf("☁️ Cloudinary Config loaded: cloud=%s\n", cloudName)
 
-	// Endpoint upload Cloudinary
 	url := fmt.Sprintf("https://api.cloudinary.com/v1_1/%s/%s/upload", cloudName, resourceType)
 
-	// Timestamp
 	timestamp := strconv.FormatInt(time.Now().Unix(), 10)
 
-	// 🔥 PERUBAHAN PENTING: Tambahkan parameter untuk mempertahankan nama file asli
-	// Signature string harus mencakup semua parameter yang digunakan
 	var signatureString string
+	params := []string{}
+
 	if folder != "" {
-		signatureString = fmt.Sprintf("folder=%s&timestamp=%s&unique_filename=false&use_filename=true%s", folder, timestamp, apiSecret)
-	} else {
-		signatureString = fmt.Sprintf("timestamp=%s&unique_filename=false&use_filename=true%s", timestamp, apiSecret)
+		params = append(params, "folder="+folder)
 	}
+
+	params = append(params, "timestamp="+timestamp)
+	params = append(params, "unique_filename=false")
+	params = append(params, "use_filename=true")
+
+	sort.Strings(params)
+
+	signatureString = strings.Join(params, "&") + apiSecret
 
 	h := sha1.New()
 	h.Write([]byte(signatureString))
 	signature := hex.EncodeToString(h.Sum(nil))
 
-	// Multipart form
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
 
@@ -74,7 +81,6 @@ func UploadToCloudinary(file io.Reader, fileName, folder, resourceType string) (
 	writer.WriteField("timestamp", timestamp)
 	writer.WriteField("signature", signature)
 
-	// 🔥 PARAMETER BARU: Gunakan nama file asli dan non-aktifkan unique filename
 	writer.WriteField("use_filename", "true")
 	writer.WriteField("unique_filename", "false")
 
@@ -84,7 +90,6 @@ func UploadToCloudinary(file io.Reader, fileName, folder, resourceType string) (
 
 	writer.Close()
 
-	// Request
 	req, err := http.NewRequest("POST", url, &body)
 	if err != nil {
 		return CloudinaryResponse{}, fmt.Errorf("failed to create request: %v", err)
@@ -123,7 +128,51 @@ func UploadToCloudinary(file io.Reader, fileName, folder, resourceType string) (
 	return result, nil
 }
 
-// Fungsi DeleteFromCloudinary tetap sama...
+func CloudinaryFileExists(publicID, resourceType string) bool {
+	cloudName := os.Getenv("CLOUDINARY_CLOUD_NAME")
+	apiKey := os.Getenv("CLOUDINARY_API_KEY")
+	apiSecret := os.Getenv("CLOUDINARY_API_SECRET")
+
+	url := fmt.Sprintf("https://api.cloudinary.com/v1_1/%s/%s/upload/%s", cloudName, resourceType, publicID)
+
+	req, _ := http.NewRequest("GET", url, nil)
+	req.SetBasicAuth(apiKey, apiSecret)
+
+	client := &http.Client{Timeout: 15 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return false
+	}
+	defer resp.Body.Close()
+
+	return resp.StatusCode == 200
+}
+
+func GenerateUniqueFileName(folder, originalName, resourceType string) string {
+	ext := ""
+	name := originalName
+
+	if dot := strings.LastIndex(originalName, "."); dot != -1 {
+		ext = originalName[dot:]
+		name = originalName[:dot]
+	}
+
+	timestamp := time.Now().UnixNano()
+	randomStr := uuid.New().String()[:8]
+	uniqueName := fmt.Sprintf("%s_%d_%s%s", name, timestamp, randomStr, ext)
+
+	publicID := fmt.Sprintf("%s/%s", folder, uniqueName)
+
+	counter := 1
+	for CloudinaryFileExists(publicID, resourceType) {
+		newName := fmt.Sprintf("%s_%d_%s(%d)%s", name, timestamp, randomStr, counter, ext)
+		publicID = fmt.Sprintf("%s/%s", folder, newName)
+		counter++
+	}
+
+	return uniqueName
+}
+
 type CloudinaryDeleteResponse struct {
 	Result string `json:"result"`
 }
@@ -137,19 +186,15 @@ func DeleteFromCloudinary(publicID string, resourceType string) error {
 		return fmt.Errorf("cloudinary credentials tidak lengkap")
 	}
 
-	// Endpoint destroy Cloudinary
 	url := fmt.Sprintf("https://api.cloudinary.com/v1_1/%s/%s/destroy", cloudName, resourceType)
 
-	// Timestamp
 	timestamp := strconv.FormatInt(time.Now().Unix(), 10)
 
-	// Signature
 	signatureString := fmt.Sprintf("public_id=%s&timestamp=%s%s", publicID, timestamp, apiSecret)
 	h := sha1.New()
 	h.Write([]byte(signatureString))
 	signature := hex.EncodeToString(h.Sum(nil))
 
-	// Form data
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
 	writer.WriteField("public_id", publicID)
@@ -158,7 +203,6 @@ func DeleteFromCloudinary(publicID string, resourceType string) error {
 	writer.WriteField("signature", signature)
 	writer.Close()
 
-	// Request
 	req, err := http.NewRequest("POST", url, &body)
 	if err != nil {
 		return fmt.Errorf("failed to create destroy request: %v", err)
@@ -192,10 +236,9 @@ func DeleteFromCloudinary(publicID string, resourceType string) error {
 		return fmt.Errorf("invalid delete response format: %v", err)
 	}
 
-	// "not found" juga dianggap sukses, karena mungkin file sudah terhapus
 	if result.Result == "ok" || result.Result == "not found" {
 		fmt.Printf("✅ Delete success (or file not found): %s\n", publicID)
-		return nil // Sukses
+		return nil
 	}
 
 	return fmt.Errorf("delete failed with result: %s", result.Result)

@@ -23,7 +23,6 @@ func GetNotifications(c *gin.Context) {
 	user := userRaw.(models.User)
 	userID := user.ID
 
-	// Ambil query param `page` dan `limit`
 	page, _ := strconv.Atoi(c.Query("page"))
 	limit, _ := strconv.Atoi(c.Query("limit"))
 
@@ -31,14 +30,13 @@ func GetNotifications(c *gin.Context) {
 		page = 1
 	}
 	if limit < 1 {
-		limit = 15 // default 15
+		limit = 15
 	}
 
 	offset := (page - 1) * limit
 
 	var notifications []models.Notification
 
-	// Ambil notifikasi user sesuai page
 	if err := config.DB.Where("user_id = ?", userID).
 		Order("created_at DESC").
 		Limit(limit).
@@ -51,7 +49,6 @@ func GetNotifications(c *gin.Context) {
 		return
 	}
 
-	// Hitung total unread
 	var unreadCount int64
 	config.DB.Model(&models.Notification{}).
 		Where("user_id = ? AND is_read = ?", userID, false).
@@ -70,9 +67,6 @@ func GetNotifications(c *gin.Context) {
 func MarkNotificationAsRead(c *gin.Context) {
 	notificationID := c.Param("id")
 
-	// ==========================================================
-	// PERBAIKAN DI SINI: Ambil "user", bukan "userID"
-	// ==========================================================
 	userRaw, exists := c.Get("user")
 	if !exists {
 		c.JSON(http.StatusUnauthorized, gin.H{
@@ -81,19 +75,17 @@ func MarkNotificationAsRead(c *gin.Context) {
 		return
 	}
 
-	user, ok := userRaw.(models.User) // Casting ke models.User
+	user, ok := userRaw.(models.User)
 	if !ok {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": "Tipe data user di context tidak valid",
 		})
 		return
 	}
-	userIDStr := user.ID // Ambil ID dari objek user
-	// ==========================================================
+	userIDStr := user.ID
 
 	var notification models.Notification
 
-	// Cari notifikasi milik user
 	if err := config.DB.Where("id = ? AND user_id = ?", notificationID, userIDStr).
 		First(&notification).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{
@@ -102,8 +94,7 @@ func MarkNotificationAsRead(c *gin.Context) {
 		return
 	}
 
-	// Update is_read menjadi true
-	if !notification.IsRead { // Hanya update jika belum dibaca
+	if !notification.IsRead {
 		notification.IsRead = true
 		if err := config.DB.Save(&notification).Error; err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{
@@ -126,7 +117,6 @@ func MarkAllAsRead(c *gin.Context) {
 	}
 	user := userRaw.(models.User)
 
-	// Update SEMUA notifikasi user yang belum dibaca
 	result := config.DB.Model(&models.Notification{}).
 		Where("user_id = ? AND is_read = ?", user.ID, false).
 		Update("is_read", true)

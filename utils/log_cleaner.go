@@ -9,10 +9,8 @@ import (
 func StartActivityLogCleaner() {
 	go func() {
 		for {
-			// Jalankan sekali sehari
 			time.Sleep(24 * time.Hour)
 
-			// Hapus log yang lebih dari 30 hari
 			err := config.DB.
 				Where("created_at <= ?", time.Now().AddDate(0, 0, -30)).
 				Delete(nil, "activity_logs").

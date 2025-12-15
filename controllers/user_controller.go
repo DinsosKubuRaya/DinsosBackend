@@ -1,8 +1,11 @@
 package controllers
 
 import (
+	"fmt"
 	"log"
 	"net/http"
+	"strings"
+	"time"
 
 	"dinsos_kuburaya/config"
 	"dinsos_kuburaya/models"
@@ -28,6 +31,7 @@ func hashPassword(pass string) (string, error) {
 	return string(hashed), err
 }
 
+// CREATE USERS
 func CreateUserWithRole(c *gin.Context, role string) {
 	if !allowedRoles[role] {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Role tidak valid"})
@@ -43,7 +47,6 @@ func CreateUserWithRole(c *gin.Context, role string) {
 	input.ID = uuid.NewString()
 	input.Role = role
 
-	// Hash Password
 	hashed, err := hashPassword(input.Password)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal mengenkripsi password"})
@@ -70,24 +73,14 @@ func CreateUserWithRole(c *gin.Context, role string) {
 	})
 }
 
-/*
-|--------------------------------------------------------------------------
-| WRAPPER: Create Superadmin, Admin, Staff
-|--------------------------------------------------------------------------
-*/
 func CreateSuperAdmin(c *gin.Context) { CreateUserWithRole(c, "superadmin") }
 func CreateAdmin(c *gin.Context)      { CreateUserWithRole(c, "admin") }
 func CreateStaff(c *gin.Context)      { CreateUserWithRole(c, "staff") }
 
-/*
-|--------------------------------------------------------------------------
-| READ ALL USER
-|--------------------------------------------------------------------------
-*/
+// READ ALL USERS
 func GetUsers(c *gin.Context) {
 	var users []models.User
 
-	// Gunakan Find dengan kondisi yang lebih spesifik
 	result := config.DB.Select("id", "name", "username", "role", "created_at", "updated_at", "photo_url").
 		Order("created_at DESC").
 		Find(&users)
@@ -97,15 +90,10 @@ func GetUsers(c *gin.Context) {
 		return
 	}
 
-	// Jika tidak ada data, kembalikan array kosong
 	c.JSON(http.StatusOK, users)
 }
 
-/*
-|--------------------------------------------------------------------------
-| READ BY ID
-|--------------------------------------------------------------------------
-*/
+// READ BY ID
 func GetUserByID(c *gin.Context) {
 	id := c.Param("id")
 	var user models.User
@@ -120,18 +108,13 @@ func GetUserByID(c *gin.Context) {
 	c.JSON(http.StatusOK, user)
 }
 
-/*
-|--------------------------------------------------------------------------
-| GET USERS FOR FILTER (Khusus untuk filter document staff)
-|--------------------------------------------------------------------------
-*/
+// GET USERS FOR FILTER
 func GetUsersForFilter(c *gin.Context) {
 	var users []struct {
 		ID   string `json:"id"`
 		Name string `json:"name"`
 	}
 
-	// Hanya ambil id dan name user dengan role staff
 	result := config.DB.Model(&models.User{}).
 		Select("id", "name").
 		Where("role IN ?", []string{"staff", "admin", "superadmin"}). // Sesuaikan dengan role yang diinginkan
@@ -146,12 +129,7 @@ func GetUsersForFilter(c *gin.Context) {
 	c.JSON(http.StatusOK, users)
 }
 
-/*
-|--------------------------------------------------------------------------
-| GetMe
-|--------------------------------------------------------------------------
-*/
-
+// GET ME
 func GetMe(c *gin.Context) {
 	userRaw, exists := c.Get("user")
 	if !exists {
@@ -163,7 +141,6 @@ func GetMe(c *gin.Context) {
 
 	user := userRaw.(models.User)
 
-	// Response yang konsisten untuk frontend
 	c.JSON(http.StatusOK, gin.H{
 		"user": gin.H{
 			"id":        user.ID,
@@ -175,22 +152,16 @@ func GetMe(c *gin.Context) {
 	})
 }
 
-/*
-|--------------------------------------------------------------------------
-| UPDATE USER
-|--------------------------------------------------------------------------
-*/
+// UPDATE USERS
 func UpdateUser(c *gin.Context) {
 	id := c.Param("id")
 	var user models.User
 
-	// Cek apakah user ada
 	if err := config.DB.Where("id = ?", id).First(&user).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "User tidak ditemukan"})
 		return
 	}
 
-	// Ambil semua form-data
 	oldPassword := c.PostForm("old_password")
 	newPassword := c.PostForm("new_password")
 
@@ -206,21 +177,10 @@ func UpdateUser(c *gin.Context) {
 	}
 
 	updates := map[string]interface{}{}
-
-	/*
-		|----------------------------------------
-		| Update Nama
-		|----------------------------------------
-	*/
 	if input.Name != "" {
 		updates["name"] = input.Name
 	}
 
-	/*
-		|----------------------------------------
-		| Update Username
-		|----------------------------------------
-	*/
 	if input.Username != "" {
 		var count int64
 		config.DB.Model(&models.User{}).
@@ -235,33 +195,28 @@ func UpdateUser(c *gin.Context) {
 		updates["username"] = input.Username
 	}
 
-	/*
-		|----------------------------------------
-		| Update Password Dengan Validasi
-		|----------------------------------------
-	*/
-	if oldPassword != "" || newPassword != "" {
+	if input.Role != "" {
+		updates["role"] = input.Role
+	}
 
-		// Harus isi dua-duanya
+	// Password logic
+	if oldPassword != "" || newPassword != "" {
 		if oldPassword == "" || newPassword == "" {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Password lama dan baru harus diisi"})
 			return
 		}
 
-		// Cek password lama benar atau tidak
 		err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(oldPassword))
 		if err != nil {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "Password lama salah"})
 			return
 		}
 
-		// Validasi panjang minimal password baru
 		if len(newPassword) < 6 {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Password baru minimal 6 karakter"})
 			return
 		}
 
-		// Hash password baru
 		hashed, err := hashPassword(newPassword)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal mengenkripsi password"})
@@ -271,11 +226,7 @@ func UpdateUser(c *gin.Context) {
 		updates["password"] = hashed
 	}
 
-	/*
-		|----------------------------------------
-		| Update Foto User
-		|----------------------------------------
-	*/
+	// Photo upload
 	file, err := c.FormFile("photo")
 	if err == nil {
 		if file.Size > 5<<20 {
@@ -290,26 +241,34 @@ func UpdateUser(c *gin.Context) {
 		}
 		defer f.Close()
 
-		uploadRes, err := config.UploadToCloudinary(f, file.Filename, "users", "image")
+		userID := user.ID
+		originalFileName := file.Filename
+
+		ext := ""
+		if dot := strings.LastIndex(originalFileName, "."); dot != -1 {
+			ext = originalFileName[dot:]
+		}
+
+		timestamp := time.Now().Unix()
+		uniqueFileName := fmt.Sprintf("user-%s-%d%s", userID[:8], timestamp, ext)
+
+		uploadRes, err := config.UploadToCloudinary(f, uniqueFileName, "users", "image")
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal upload foto: " + err.Error()})
 			return
 		}
 
-		// Hapus foto lama
 		if user.PhotoID != nil && *user.PhotoID != "" {
-			config.DeleteFromCloudinary(*user.PhotoID, "image")
+
+			if *user.PhotoID != uploadRes.PublicID {
+				config.DeleteFromCloudinary(*user.PhotoID, "image")
+			}
 		}
 
 		updates["photo_url"] = uploadRes.SecureURL
 		updates["photo_id"] = uploadRes.PublicID
 	}
 
-	/*
-		|----------------------------------------
-		| Simpan Perubahan
-		|----------------------------------------
-	*/
 	if len(updates) > 0 {
 		if err := config.DB.Model(&user).Updates(updates).Error; err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal update user"})
@@ -317,10 +276,8 @@ func UpdateUser(c *gin.Context) {
 		}
 	}
 
-	// Ambil data terbaru
 	config.DB.Where("id = ?", id).First(&user)
 
-	// ========== ACTIVITY LOG ==========
 	currentUser := c.MustGet("user").(models.User)
 	services.CreateActivity(
 		currentUser.ID,
@@ -335,28 +292,61 @@ func UpdateUser(c *gin.Context) {
 	})
 }
 
-/*
-|--------------------------------------------------------------------------
-| DELETE USER
-|--------------------------------------------------------------------------
-*/
-func DeleteUser(c *gin.Context) {
+// RESET PASSWORD (only superadmin)
+func ResetPassword(c *gin.Context) {
 	id := c.Param("id")
 
-	// Ambil user yang akan dihapus untuk log
+	currentUser := c.MustGet("user").(models.User)
+	if currentUser.Role != "superadmin" {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Hanya superadmin yang dapat reset password"})
+		return
+	}
+
 	var user models.User
 	if err := config.DB.Where("id = ?", id).First(&user).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "User tidak ditemukan"})
 		return
 	}
 
-	// Hapus user
+	defaultPassword := "123456"
+	hashed, err := hashPassword(defaultPassword)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal mengenkripsi password"})
+		return
+	}
+
+	if err := config.DB.Model(&user).Update("password", hashed).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal reset password"})
+		return
+	}
+
+	services.CreateActivity(
+		currentUser.ID,
+		currentUser.Name,
+		"update",
+		"Reset password user: "+user.Name+" ke default",
+	)
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Password berhasil direset ke default (123456)",
+	})
+}
+
+// DELETE USERS
+func DeleteUser(c *gin.Context) {
+	id := c.Param("id")
+
+	var user models.User
+	if err := config.DB.Where("id = ?", id).First(&user).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "User tidak ditemukan"})
+		return
+	}
+
 	if err := config.DB.Delete(&models.User{}, "id = ?", id).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal menghapus user"})
 		return
 	}
 
-	// ========== ACTIVITY LOG ==========
 	currentUser := c.MustGet("user").(models.User)
 	services.CreateActivity(
 		currentUser.ID,
@@ -368,12 +358,7 @@ func DeleteUser(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "User berhasil dihapus"})
 }
 
-/*
-|--------------------------------------------------------------------------
-| PUSH TOKEN
-|--------------------------------------------------------------------------
-*/
-
+// PUSH TOKEN
 func StorePushToken(c *gin.Context) {
 	userRaw, exists := c.Get("user")
 	if !exists {
@@ -400,7 +385,6 @@ func StorePushToken(c *gin.Context) {
 		return
 	}
 
-	// Simpan token
 	if err := config.DB.Model(&models.User{}).
 		Where("id = ?", user.ID).
 		Update("push_token", req.Token).Error; err != nil {

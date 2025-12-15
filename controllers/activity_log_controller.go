@@ -9,11 +9,9 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// API: Mengambil semua data log untuk ditampilkan di dashboard
 func GetAllActivityLogs(c *gin.Context) {
 	var logs []models.ActivityLog
 
-	// Ambil query params
 	page := 1
 	limit := 20
 
@@ -24,10 +22,8 @@ func GetAllActivityLogs(c *gin.Context) {
 		fmt.Sscanf(l, "%d", &limit)
 	}
 
-	// Hitung offset
 	offset := (page - 1) * limit
 
-	// Ambil data dengan limit + offset
 	if err := config.DB.
 		Order("created_at DESC").
 		Limit(limit).
@@ -38,7 +34,6 @@ func GetAllActivityLogs(c *gin.Context) {
 		return
 	}
 
-	// Hitung total untuk pagination (optional)
 	var total int64
 	config.DB.Model(&models.ActivityLog{}).Count(&total)
 

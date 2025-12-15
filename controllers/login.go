@@ -59,7 +59,6 @@ func Login(c *gin.Context) {
 		return
 	}
 
-	// Hash token
 	hash := sha256.Sum256([]byte(signedToken))
 	hashedToken := hex.EncodeToString(hash[:])
 
@@ -68,11 +67,9 @@ func Login(c *gin.Context) {
 		device = "unknown"
 	}
 
-	// Clean old token
 	db.Where("expires_at < ?", time.Now()).Delete(&models.SecretToken{})
 	db.Where("user_id = ? AND device = ?", user.ID, device).Delete(&models.SecretToken{})
 
-	// Limit 2 tokens
 	var userTokens []models.SecretToken
 	db.Where("user_id = ?", user.ID).Order("created_at DESC").Find(&userTokens)
 	if len(userTokens) >= 2 {

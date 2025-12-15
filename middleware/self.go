@@ -22,13 +22,11 @@ func UserSelfOrSuperAdmin() gin.HandlerFunc {
 		user := userRaw.(models.User)
 		targetID := c.Param("id")
 
-		// superadmin bebas
 		if user.Role == "superadmin" {
 			c.Next()
 			return
 		}
 
-		// admin & staff hanya boleh update dirinya sendiri
 		if user.ID != targetID {
 			c.JSON(http.StatusForbidden, gin.H{"message": "Tidak boleh mengakses data user lain"})
 			c.Abort()

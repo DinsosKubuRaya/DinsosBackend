@@ -11,7 +11,6 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// PERBAIKAN: Melonggarkan pola untuk mengizinkan karakter yang lebih umum
 // Mengizinkan huruf, angka, spasi, dan karakter umum yang aman
 var allowedPattern = regexp.MustCompile(`^[a-zA-Z0-9\s\-\_,\.\+!@#\$%^&*()\[\]{}:;'"\?\/\\~` + "`" + ` ]*$`)
 
@@ -69,17 +68,14 @@ func XSSBlocker() gin.HandlerFunc {
 		}
 
 		// === 2. Cek form / multipart ===
-		// PERBAIKAN: Skip pemeriksaan XSS untuk endpoint upload file
 		contentType := c.GetHeader("Content-Type")
 		if strings.Contains(contentType, "multipart/form-data") {
-			// Untuk upload file, skip pemeriksaan XSS karena file binary bisa mengandung berbagai karakter
 			c.Next()
 			return
 		}
 
-		_ = c.Request.ParseMultipartForm(100 << 20) // sama seperti MaxMultipartMemory di main.go
+		_ = c.Request.ParseMultipartForm(100 << 20)
 
-		// cek form values
 		for key, vals := range c.Request.PostForm {
 			if containsIllegal(key) {
 				c.JSON(http.StatusBadRequest, gin.H{"error": "Form key mengandung karakter ilegal"})
@@ -108,7 +104,6 @@ func XSSBlocker() gin.HandlerFunc {
 						return
 					}
 				}
-				// reset body agar bisa dibaca handler berikutnya
 				c.Request.Body = io.NopCloser(bytes.NewBuffer(body))
 			}
 		}

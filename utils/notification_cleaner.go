@@ -9,7 +9,7 @@ import (
 func StartNotificationCleaner() {
 	go func() {
 		for {
-			time.Sleep(24 * time.Hour) // jalan 1x sehari
+			time.Sleep(24 * time.Hour)
 
 			err := config.DB.
 				Where("created_at <= ?", time.Now().AddDate(0, 0, -30)).

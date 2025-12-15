@@ -18,6 +18,7 @@ type Notification struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
+// Generate UUID
 func (n *Notification) BeforeCreate(tx *gorm.DB) (err error) {
 	n.ID = uuid.NewString()
 	return

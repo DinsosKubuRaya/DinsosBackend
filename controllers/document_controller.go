@@ -89,10 +89,8 @@ func CreateDocument(c *gin.Context) {
 		return
 	}
 
-	// LOG + NOTIF
 	services.CreateActivity(user.ID, user.Name, "create", "Mengunggah dokumen: "+document.FileName)
 
-	// PERUBAHAN DI SINI: Kirim file_url sebagai link notifikasi
 	services.NotifyAllUsers(
 		"Dokumen baru diunggah: "+document.FileName,
 		document.FileURL,
@@ -195,7 +193,7 @@ func UpdateDocument(c *gin.Context) {
 // GET DOCUMENT SUMMARY (PER BULAN, PER MINGGU)
 // =======================
 func GetDocumentSummary(c *gin.Context) {
-	// Ambil parameter tahun dan bulan, jika tidak ada, gunakan waktu sekarang
+
 	yearStr := c.DefaultQuery("year", "")
 	monthStr := c.DefaultQuery("month", "")
 
@@ -214,11 +212,9 @@ func GetDocumentSummary(c *gin.Context) {
 		}
 	}
 
-	// Tentukan awal dan akhir bulan
 	startOfMonth := time.Date(year, time.Month(month), 1, 0, 0, 0, 0, time.Local)
 	endOfMonth := startOfMonth.AddDate(0, 1, -1).Add(23*time.Hour + 59*time.Minute + 59*time.Second)
 
-	// Inisialisasi struktur untuk 4 minggu
 	type WeekSummary struct {
 		Week   int    `json:"week"`
 		Start  string `json:"start"`
@@ -228,10 +224,8 @@ func GetDocumentSummary(c *gin.Context) {
 	}
 	weeks := make([]WeekSummary, 0, 4)
 
-	// Tentukan pembagian minggu
 	lastDay := endOfMonth.Day()
 
-	// Rentang minggu (tiap 7 hari, kecuali minggu terakhir)
 	weekRanges := []struct {
 		start int
 		end   int
@@ -243,7 +237,6 @@ func GetDocumentSummary(c *gin.Context) {
 	}
 
 	for i, weekRange := range weekRanges {
-		// Jika start > lastDay, lewati minggu ini
 		if weekRange.start > lastDay {
 			weeks = append(weeks, WeekSummary{
 				Week:   i + 1,
@@ -255,7 +248,6 @@ func GetDocumentSummary(c *gin.Context) {
 			continue
 		}
 
-		// Pastikan end tidak melebihi lastDay
 		endDay := weekRange.end
 		if endDay > lastDay {
 			endDay = lastDay
@@ -264,11 +256,9 @@ func GetDocumentSummary(c *gin.Context) {
 		startDate := time.Date(year, time.Month(month), weekRange.start, 0, 0, 0, 0, time.Local)
 		endDate := time.Date(year, time.Month(month), endDay, 23, 59, 59, 0, time.Local)
 
-		// Format tanggal ke string ISO dengan timezone lokal
 		startStr := startDate.Format("2006-01-02 15:04:05.000")
 		endStr := endDate.Format("2006-01-02 15:04:05.000")
 
-		// Query untuk surat masuk dan keluar dalam rentang ini
 		var masuk, keluar int64
 		config.DB.Model(&models.Document{}).Where("created_at BETWEEN ? AND ? AND letter_type = ?", startDate, endDate, "masuk").Count(&masuk)
 		config.DB.Model(&models.Document{}).Where("created_at BETWEEN ? AND ? AND letter_type = ?", startDate, endDate, "keluar").Count(&keluar)
@@ -282,7 +272,6 @@ func GetDocumentSummary(c *gin.Context) {
 		})
 	}
 
-	// Get month name
 	monthName := startOfMonth.Month().String()
 
 	c.JSON(http.StatusOK, gin.H{

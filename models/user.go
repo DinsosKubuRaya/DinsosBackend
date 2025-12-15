@@ -21,9 +21,8 @@ type User struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
-// Generate UUID sebelum disimpan
+// Generate UUID
 func (u *User) BeforeCreate(tx *gorm.DB) (err error) {
-	// Pastikan ini 'u.ID' (huruf besar)
 	u.ID = uuid.NewString()
 	return
 }

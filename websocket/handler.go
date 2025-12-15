@@ -10,7 +10,7 @@ import (
 
 var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool {
-		return true // sesuaikan jika perlu
+		return true
 	},
 }
 
@@ -36,7 +36,6 @@ func WebSocketHandler(hub *Hub) gin.HandlerFunc {
 			}()
 
 			for {
-				// Baca message tapi tidak dipakai
 				_, _, err := client.Conn.ReadMessage()
 				if err != nil {
 					log.Println("WS read error / closed:", err)

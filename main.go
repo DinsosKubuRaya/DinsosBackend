@@ -11,7 +11,6 @@ import (
 	"dinsos_kuburaya/routes"
 	"dinsos_kuburaya/utils"
 
-	// 🔥 Tambahkan ini
 	ws "dinsos_kuburaya/websocket"
 )
 
@@ -41,12 +40,11 @@ func main() {
 	websocketHub := ws.NewHub()
 	go websocketHub.Run()
 
-	// Simpan hub ke tempat global agar bisa dipakai oleh service
 	ws.HubInstance = websocketHub
-	r.GET("/ws/notifications", ws.WebSocketHandler(websocketHub))
 
 	api := r.Group("/api")
 	{
+		routes.WebSocketRoutes(api, websocketHub)
 		routes.LoginRoutes(api)
 		routes.LogoutRoutes(api)
 		routes.UserRoutes(api)
@@ -56,9 +54,6 @@ func main() {
 		routes.ActivityLogRoutes(api)
 	}
 
-	// ======================================================
-	// RUN SERVER
-	// ======================================================
 	log.Println("✅ Server berjalan di port 8080")
 	if err := r.Run(":8080"); err != nil {
 		log.Fatal("Gagal menjalankan server:", err)

@@ -44,7 +44,6 @@ func AuthMiddleware() gin.HandlerFunc {
 			return []byte(secret), nil
 		})
 
-		// Handle parsing error
 		if err != nil {
 			config.DB.Where("jwt_token = ?", hashedToken).Delete(&models.SecretToken{})
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "token invalid"})
@@ -95,7 +94,6 @@ func AuthMiddleware() gin.HandlerFunc {
 		// 6. Cek hashed token di database
 		var st models.SecretToken
 		if err := config.DB.Preload("User").Where("jwt_token = ?", hashedToken).First(&st).Error; err != nil {
-			// Token tidak ditemukan di database (mungkin sudah dihapus/diganti)
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "session expired"})
 			c.Abort()
 			return

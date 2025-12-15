@@ -43,10 +43,8 @@ func initFirebaseApp() error {
 		return nil
 	}
 
-	// Path ke file service account
 	serviceAccountPath := "notifikasi-dinsos-firebase-adminsdk-fbsvc-e877342c09.json"
 
-	// Cek apakah file exists
 	if _, err := os.Stat(serviceAccountPath); os.IsNotExist(err) {
 		log.Printf("[Firebase] ❌ Service account file not found at: %s", serviceAccountPath)
 		return fmt.Errorf("service account file not found: %s", serviceAccountPath)
@@ -144,7 +142,6 @@ func sendViaFCM(token, title, body, userID string) error {
 		},
 	}
 
-	// Kirim pesan
 	response, err := client.Send(ctx, message)
 	if err != nil {
 		log.Printf("[FCM] ❌ Failed to send message: %v", err)
@@ -225,7 +222,6 @@ func sendViaExpo(token, title, body, userID string) error {
 	if resp.StatusCode >= 400 {
 		log.Printf("[Expo] ❌ Expo returned error: %v - %v", resp.StatusCode, respBody)
 
-		// Jika token invalid, hapus dari database
 		if strings.Contains(fmt.Sprintf("%v", respBody), "DeviceNotRegistered") ||
 			strings.Contains(fmt.Sprintf("%v", respBody), "InvalidCredentials") {
 			log.Println("[Expo] 🗑️ Invalid token, removing from DB")
