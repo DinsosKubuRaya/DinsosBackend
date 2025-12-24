@@ -20,9 +20,12 @@ func ConnectDatabase() {
 		log.Fatal("❌ MYSQL_URL tidak ditemukan")
 	}
 
-	// convert mysql://user:pass@host:port/db
-	dsn := strings.TrimPrefix(rawURL, "mysql://") +
-		"?charset=utf8mb4&parseTime=True&loc=Local"
+	// mysql://user:pass@host:port/db
+	dsn := strings.Replace(rawURL, "mysql://", "", 1)
+	dsn = strings.Replace(dsn, "@", "@tcp(", 1)
+	dsn = strings.Replace(dsn, "/", ")/", 1)
+
+	dsn += "?charset=utf8mb4&parseTime=True&loc=Local"
 
 	database, err := gorm.Open(mysql.Open(dsn), &gorm.Config{})
 	if err != nil {
@@ -30,7 +33,7 @@ func ConnectDatabase() {
 	}
 
 	registerQueryProtector(database)
-
 	DB = database
+
 	log.Println("✅ Database Railway MySQL terkoneksi")
 }
