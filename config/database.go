@@ -1,7 +1,6 @@
 package config
 
 import (
-	"fmt"
 	"log"
 	"os"
 
@@ -13,20 +12,13 @@ import (
 var DB *gorm.DB
 
 func ConnectDatabase() {
-	// Load .env
-	err := godotenv.Load()
-	if err != nil {
-		log.Println("⚠️  Tidak menemukan file .env, lanjutkan dengan environment system")
+	// Load .env (aman, di Railway akan dilewati)
+	_ = godotenv.Load()
+
+	dsn := os.Getenv("MYSQL_URL")
+	if dsn == "" {
+		log.Fatal("❌ MYSQL_URL tidak ditemukan")
 	}
-
-	user := os.Getenv("DB_USER")
-	pass := os.Getenv("DB_PASSWORD")
-	host := os.Getenv("DB_HOST")
-	name := os.Getenv("DB_NAME")
-
-	dsn := fmt.Sprintf("%s:%s@tcp(%s)/%s?charset=utf8mb4&parseTime=True&loc=Local",
-		user, pass, host, name,
-	)
 
 	database, err := gorm.Open(mysql.Open(dsn), &gorm.Config{})
 	if err != nil {
@@ -37,5 +29,5 @@ func ConnectDatabase() {
 	registerQueryProtector(database)
 
 	DB = database
-	log.Println("✅ Database terkoneksi (dengan proteksi SQL Injection)")
+	log.Println("✅ Database Railway MySQL terkoneksi")
 }
