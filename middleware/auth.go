@@ -17,6 +17,12 @@ import (
 
 func AuthMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
+
+		if c.FullPath() == "/api/users/superadmin" {
+			c.Next()
+			return
+		}
+
 		// 1. Ambil header Authorization
 		tokenString := c.GetHeader("Authorization")
 		if tokenString == "" {

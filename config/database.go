@@ -32,7 +32,7 @@ func ConnectDatabase() {
 		log.Fatal("❌ Gagal koneksi database:", err)
 	}
 
-	// registerQueryProtector(database)
+	registerQueryProtector(database)
 	DB = database
 
 	log.Println("✅ Database Railway MySQL terkoneksi")
