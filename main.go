@@ -2,6 +2,7 @@ package main
 
 import (
 	"log"
+	"os"
 
 	"github.com/gin-gonic/gin"
 
@@ -54,8 +55,13 @@ func main() {
 		routes.ActivityLogRoutes(api)
 	}
 
-	log.Println("✅ Server berjalan di port 8080")
-	if err := r.Run(":8080"); err != nil {
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8000" // fallback lokal
+	}
+
+	log.Println("✅ Server berjalan di port", port)
+	if err := r.Run(":" + port); err != nil {
 		log.Fatal("Gagal menjalankan server:", err)
 	}
 }
